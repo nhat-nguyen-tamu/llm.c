@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=gpt2_train_mini
+#SBATCH --job-name=gpt2_train_d18
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1  
 #SBATCH --cpus-per-task=32

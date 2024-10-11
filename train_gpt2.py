@@ -114,6 +114,39 @@ class Block(nn.Module):
         x = x + self.mlp(self.ln_2(x))
         return x
 
+class RotaryPositionalEmbedding(nn.Module):
+    def __init__(self, max_seq_len, d_model):
+        super(RotaryPositionalEmbedding, self).__init__()
+
+        # Create a rotation matrix.
+        self.rotation_matrix = torch.zeros(d_model, d_model, device=torch.device("cuda"))
+        for i in range(d_model):
+            for j in range(d_model):
+                self.rotation_matrix[i, j] = torch.cos(i * j * 0.01)
+
+        # Create a positional embedding matrix.
+        self.positional_embedding = torch.zeros(max_seq_len, d_model, device=torch.device("cuda"))
+        for i in range(max_seq_len):
+            for j in range(d_model):
+                self.positional_embedding[i, j] = torch.cos(i * j * 0.01)
+
+    def forward(self, x):
+        """
+        Args:
+            x: A tensor of shape (batch_size, seq_len, d_model).
+
+        Returns:
+            A tensor of shape (batch_size, seq_len, d_model).
+        """
+
+        # Add the positional embedding to the input tensor.
+        x += self.positional_embedding
+
+        # Apply the rotation matrix to the input tensor.
+        x = torch.matmul(x, self.rotation_matrix)
+
+        return x
+
 # -----------------------------------------------------------------------------
 # The main GPT-2 model
 
@@ -163,12 +196,13 @@ class GPT(nn.Module):
         device = idx.device
         b, t = idx.size()
         assert t <= self.config.block_size, f"Cannot forward sequence of length {t}, block size is only {self.config.block_size}"
-        pos = torch.arange(0, t, dtype=torch.long, device=device) # shape (t)
+        # pos = torch.arange(0, t, dtype=torch.long, device=device) # shape (t)
 
         # forward the GPT model itself
         tok_emb = self.transformer.wte(idx) # token embeddings of shape (b, t, n_embd)
-        pos_emb = self.transformer.wpe(pos) # position embeddings of shape (t, n_embd)
-        x = tok_emb + pos_emb
+        # pos_emb = self.transformer.wpe(pos) # position embeddings of shape (t, n_embd)
+        # x = tok_emb + pos_emb
+        x = self.transformer.wpe(tok_emb) # apply rotary positional embedding
 
         for block in self.transformer.h:
             x = block(x)
