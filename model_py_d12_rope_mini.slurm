@@ -15,7 +15,7 @@ python train_gpt2.py \
     --input_val_bin "dev/data/fineweb10B/fineweb_val_*.bin" \
     --model "d12" \
     --output_dir "log_model_py_d12_rope_mini" \
-    --batch_size 32 \
+    --batch_size 16 \
     --sequence_length 1024 \
     --total_batch_size 524288 \
     --zero_stage 1 \
@@ -25,4 +25,6 @@ python train_gpt2.py \
     --warmup_iters 700 \
     --val_loss_every 250 \
     --sample_every 20000 \
+    --flash 1 \
+    --dtype "float16" \
     --num_iterations 125
