@@ -120,34 +120,20 @@ class RotaryPositionalEmbedding(nn.Module):
     def __init__(self, max_seq_len, d_model):
         super(RotaryPositionalEmbedding, self).__init__()
 
-        # Create a rotation matrix.
-        self.rotation_matrix = torch.zeros(d_model, d_model, device=torch.device("cuda"))
-        for i in range(d_model):
-            for j in range(d_model):
-                self.rotation_matrix[i, j] = torch.cos(torch.tensor(i * j * 0.01))
+        self.max_seq_len = max_seq_len
+        self.d_model = d_model
 
-        # Create a positional embedding matrix.
-        self.positional_embedding = torch.zeros(max_seq_len, d_model, device=torch.device("cuda"))
-        for i in range(max_seq_len):
-            for j in range(d_model):
-                self.positional_embedding[i, j] = torch.cos(torch.tensor(i * j * 0.01))
+        # Create a positional embedding matrix
+        position = torch.arange(0, max_seq_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
+        pe = torch.zeros(max_seq_len, d_model)
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        self.register_buffer('pe', pe.unsqueeze(0))
 
     def forward(self, x):
-        """
-        Args:
-            x: A tensor of shape (batch_size, seq_len, d_model).
-
-        Returns:
-            A tensor of shape (batch_size, seq_len, d_model).
-        """
-
-        # Add the positional embedding to the input tensor.
-        x += self.positional_embedding
-
-        # Apply the rotation matrix to the input tensor.
-        x = torch.matmul(x, self.rotation_matrix)
-
-        return x
+        seq_len = x.size(1)
+        return x + self.pe[:, :seq_len, :]
 
 # -----------------------------------------------------------------------------
 # The main GPT-2 model
@@ -560,63 +546,6 @@ def write_tokenizer(enc, filename):
             file.write(struct.pack("<B", length))  # Write the length as a 1-byte unsigned integer
             file.write(b)  # Write the actual bytes
     print(f"wrote {filename}")
-
-def convert_to_huggingface_model(custom_model, config):
-    # Create a new GPT2Config
-    hf_config = GPT2Config(
-        vocab_size=config.vocab_size,
-        n_positions=config.block_size,
-        n_embd=config.n_embd,
-        n_layer=config.n_layer,
-        n_head=config.n_head,
-        n_inner=config.n_embd * 4,  # Assuming the MLP uses 4*n_embd as in the original GPT-2
-        activation_function="gelu_new",  # Assuming you're using the new GELU activation
-        resid_pdrop=0.1,  # You may want to adjust these dropout values
-        embd_pdrop=0.1,
-        attn_pdrop=0.1,
-        layer_norm_epsilon=1e-5,
-        initializer_range=0.02,
-        use_cache=True
-    )
-
-    # Create a new HuggingFace GPT2LMHeadModel
-    hf_model = GPT2LMHeadModel(hf_config)
-
-    # Copy weights from custom model to HuggingFace model
-    # This part depends on your exact model structure and may need adjustments
-    hf_model.transformer.wte.weight.data = custom_model.transformer.wte.weight.data
-    
-    # Handle the rotary positional embedding
-    if hasattr(custom_model.transformer.wpe, 'positional_embedding'):
-        hf_model.transformer.wpe.weight.data = custom_model.transformer.wpe.positional_embedding.data
-    
-    for i in range(config.n_layer):
-        # Attention weights
-        hf_model.transformer.h[i].attn.c_attn.weight.data = custom_model.transformer.h[i].attn.c_attn.weight.data
-        hf_model.transformer.h[i].attn.c_attn.bias.data = custom_model.transformer.h[i].attn.c_attn.bias.data
-        hf_model.transformer.h[i].attn.c_proj.weight.data = custom_model.transformer.h[i].attn.c_proj.weight.data
-        hf_model.transformer.h[i].attn.c_proj.bias.data = custom_model.transformer.h[i].attn.c_proj.bias.data
-        
-        # MLP weights
-        hf_model.transformer.h[i].mlp.c_fc.weight.data = custom_model.transformer.h[i].mlp.c_fc.weight.data
-        hf_model.transformer.h[i].mlp.c_fc.bias.data = custom_model.transformer.h[i].mlp.c_fc.bias.data
-        hf_model.transformer.h[i].mlp.c_proj.weight.data = custom_model.transformer.h[i].mlp.c_proj.weight.data
-        hf_model.transformer.h[i].mlp.c_proj.bias.data = custom_model.transformer.h[i].mlp.c_proj.bias.data
-        
-        # Layer norm weights
-        hf_model.transformer.h[i].ln_1.weight.data = custom_model.transformer.h[i].ln_1.weight.data
-        hf_model.transformer.h[i].ln_1.bias.data = custom_model.transformer.h[i].ln_1.bias.data
-        hf_model.transformer.h[i].ln_2.weight.data = custom_model.transformer.h[i].ln_2.weight.data
-        hf_model.transformer.h[i].ln_2.bias.data = custom_model.transformer.h[i].ln_2.bias.data
-
-    # Final layer norm
-    hf_model.transformer.ln_f.weight.data = custom_model.transformer.ln_f.weight.data
-    hf_model.transformer.ln_f.bias.data = custom_model.transformer.ln_f.bias.data
-
-    # LM head
-    hf_model.lm_head.weight.data = custom_model.lm_head.weight.data
-
-    return hf_model
 
 # -----------------------------------------------------------------------------
 # int main
