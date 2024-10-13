@@ -25,4 +25,6 @@ python train_gpt2.py \
     --warmup_iters 700 \
     --val_loss_every 250 \
     --sample_every 20000 \
-    --num_iterations 19560
+    --flash 1 \
+    --dtype "bfloat16" \
+    --num_iterations 10800
